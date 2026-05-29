@@ -1,0 +1,15 @@
+{
+  "$schema": "https://www.flowlauncher.com/schemas/plugin.schema.json",
+  "ID": "D4E9A81496F24F00B6B5513C44EC9CFA",
+  "ActionKeyword": "fmf",
+  "IsGlobal": false,
+  "Name": "Findmyfiles",
+  "Description": "Search local indexed files through the findmyfiles API",
+  "Author": "OpenAI",
+  "Version": "0.1.0",
+  "Language": "csharp",
+  "Website": "https://github.com/Flow-Launcher/Flow.Launcher",
+  "ExecuteFileName": "Findmyfiles.FlowLauncher.Plugin.dll",
+  "IcoPath": "Images\\findmyfiles.png",
+  "DynamicLoading": false
+}

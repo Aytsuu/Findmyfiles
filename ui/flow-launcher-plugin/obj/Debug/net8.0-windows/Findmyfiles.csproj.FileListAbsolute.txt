@@ -1,0 +1,15 @@
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\Findmyfiles.csproj.AssemblyReference.cache
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\Findmyfiles.GeneratedMSBuildEditorConfig.editorconfig
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\Findmyfiles.AssemblyInfoInputs.cache
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\Findmyfiles.AssemblyInfo.cs
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\Findmyfiles.csproj.CoreCompileInputs.cache
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\Findmyfiles.sourcelink.json
+D:\Findmyfiles\ui\flow-launcher-plugin\bin\Debug\net8.0-windows\plugin.json
+D:\Findmyfiles\ui\flow-launcher-plugin\bin\Debug\net8.0-windows\Findmyfiles.FlowLauncher.Plugin.deps.json
+D:\Findmyfiles\ui\flow-launcher-plugin\bin\Debug\net8.0-windows\Findmyfiles.FlowLauncher.Plugin.dll
+D:\Findmyfiles\ui\flow-launcher-plugin\bin\Debug\net8.0-windows\Findmyfiles.FlowLauncher.Plugin.pdb
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\Findmyfiles.FlowLauncher.Plugin.dll
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\refint\Findmyfiles.FlowLauncher.Plugin.dll
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\Findmyfiles.FlowLauncher.Plugin.pdb
+D:\Findmyfiles\ui\flow-launcher-plugin\obj\Debug\net8.0-windows\ref\Findmyfiles.FlowLauncher.Plugin.dll
+D:\Findmyfiles\ui\flow-launcher-plugin\bin\Debug\net8.0-windows\Images\findmyfiles.png

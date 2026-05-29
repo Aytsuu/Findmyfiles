@@ -1,0 +1,17 @@
+[watcher]
+roots = ["C:/Users/patty/Downloads", "C:/Users/patty/OneDrive/Desktop/OneDrive"]
+exclude_globs = [".git/**", "node_modules/**", "*.tmp", "*.log", "__pycache__/**"]
+include_exts = [".txt", ".md", ".py", ".js", ".ts", ".pdf", ".docx", ".png", ".jpg"]
+
+[indexer]
+batch_size = 20
+chunk_tokens = 500
+chunk_overlap = 50
+model = "models/gemini-embedding-002"
+
+[api]
+host = "127.0.0.1"
+port = 7474
+
+[storage]
+chroma_dir = "~/.findmyfiles/chroma"
