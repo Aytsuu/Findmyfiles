@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from threading import Thread
 
@@ -11,6 +12,8 @@ from findmyfiles.indexer import Indexer
 from findmyfiles.runtime import ScanStatus
 from findmyfiles.store import VectorStore
 from findmyfiles.watcher import FileWatcher
+
+logger = logging.getLogger("findmyfiles")
 
 
 def _iter_files(root: Path, include_exts: tuple[str, ...]):
@@ -58,8 +61,11 @@ def _start_initial_scan(
 
 def build_runtime(config_path: str | Path = "config.toml") -> tuple[object, FileWatcher, Indexer, ScanStatus]:
     config = load_config(config_path)
-    store = VectorStore(config.storage.chroma_dir)
-    indexer = Indexer(store, config.indexer)
+    store = VectorStore(
+        config.storage.chroma_dir,
+        collection_name=config.storage.collection_name,
+    )
+    indexer = Indexer(store, config.indexer, gemini_api_key=config.gemini_api_key)
     scan_status = ScanStatus()
     watcher = FileWatcher(config.watcher, indexer.index_file)
     app = create_app(config=config, store=store, indexer=indexer, scan_status=scan_status)
@@ -67,11 +73,16 @@ def build_runtime(config_path: str | Path = "config.toml") -> tuple[object, File
 
 
 def run(config_path: str | Path = "config.toml") -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(name)s] %(message)s",
+    )
     app, watcher, indexer, scan_status = build_runtime(config_path)
     watcher.start()
     _start_initial_scan(config_path=config_path, indexer=indexer, scan_status=scan_status)
     try:
         config = load_config(config_path)
+        logger.info("api starting host=%s port=%s", config.api.host, config.api.port)
         uvicorn.run(app, host=config.api.host, port=config.api.port)
     finally:
         watcher.stop()

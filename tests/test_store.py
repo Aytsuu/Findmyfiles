@@ -50,3 +50,24 @@ def test_is_stale_uses_mtime_and_size(tmp_path: Path) -> None:
 
     assert store.is_stale(file_path, mtime=1.0, size=5) is False
     assert store.is_stale(file_path, mtime=2.0, size=5) is True
+
+
+def test_store_persists_through_chroma_reopen(tmp_path: Path) -> None:
+    store_root = tmp_path / "store"
+    store = VectorStore(store_root)
+    file_path = tmp_path / "persist.txt"
+    file_path.write_text("persist me", encoding="utf-8")
+
+    store.upsert(
+        file_path,
+        ["persist me"],
+        [(0.5, 0.25)],
+        mime="text/plain",
+        mtime=3.0,
+        size=10,
+    )
+
+    reopened = VectorStore(store_root)
+    results = reopened.query((0.5, 0.25), n_results=1)
+    assert len(results) == 1
+    assert results[0]["path"] == str(file_path.resolve())

@@ -20,7 +20,7 @@ class IndexerConfig:
     batch_size: int = 20
     chunk_tokens: int = 500
     chunk_overlap: int = 50
-    model: str = "models/gemini-embedding-002"
+    model: str = "models/gemini-embedding-2"
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,7 @@ class APIConfig:
 @dataclass(frozen=True)
 class StorageConfig:
     chroma_dir: Path
+    collection_name: str = "findmyfiles"
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         batch_size=int(indexer_data.get("batch_size", 20)),
         chunk_tokens=int(indexer_data.get("chunk_tokens", 500)),
         chunk_overlap=int(indexer_data.get("chunk_overlap", 50)),
-        model=str(indexer_data.get("model", "models/gemini-embedding-002")),
+        model=str(indexer_data.get("model", "models/gemini-embedding-2")),
     )
     api = APIConfig(
         host=str(api_data.get("host", "127.0.0.1")),
@@ -90,6 +91,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
     )
     storage = StorageConfig(
         chroma_dir=_expand_path(str(storage_data.get("chroma_dir", "~/.findmyfiles/chroma"))),
+        collection_name=str(storage_data.get("collection_name", "findmyfiles")),
     )
     gemini_api_key = os.getenv("GEMINI_API_KEY")
 

@@ -1,73 +1,54 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from pathlib import Path
-import json
+from hashlib import sha256
+import logging
 import math
+from pathlib import Path
 from typing import Any
 
-
-@dataclass(frozen=True)
-class StoreRecord:
-    id: str
-    document: str
-    embedding: tuple[float, ...]
-    metadata: dict[str, Any]
+logger = logging.getLogger("findmyfiles.store")
 
 
-def cosine_similarity(left: tuple[float, ...], right: tuple[float, ...]) -> float:
-    numerator = sum(a * b for a, b in zip(left, right, strict=False))
-    left_norm = math.sqrt(sum(a * a for a in left))
-    right_norm = math.sqrt(sum(b * b for b in right))
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    return numerator / (left_norm * right_norm)
+def _import_chromadb() -> Any:
+    try:
+        import chromadb
+    except ImportError as exc:  # pragma: no cover - exercised in runtime only
+        msg = "chromadb is required at runtime. Install dependencies with `python -m pip install -e .`."
+        raise RuntimeError(msg) from exc
+    return chromadb
+
+
+def _build_where(filters: dict[str, Any]) -> dict[str, Any] | None:
+    clauses: list[dict[str, Any]] = []
+
+    mime = filters.get("mime")
+    if mime:
+        clauses.append({"mime": mime})
+
+    mtime_from = filters.get("mtime_from")
+    if mtime_from is not None:
+        clauses.append({"mtime": {"$gte": float(mtime_from)}})
+
+    mtime_to = filters.get("mtime_to")
+    if mtime_to is not None:
+        clauses.append({"mtime": {"$lte": float(mtime_to)}})
+
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
 
 
 class VectorStore:
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, *, collection_name: str = "findmyfiles") -> None:
+        chromadb = _import_chromadb()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
-        self._records_path = self.root / "records.json"
-        self._state_path = self.root / "file_state.json"
-        self._records = self._load_records()
-        self._file_state = self._load_state()
-
-    def _load_records(self) -> dict[str, StoreRecord]:
-        if not self._records_path.exists():
-            return {}
-        payload = json.loads(self._records_path.read_text(encoding="utf-8"))
-        return {
-            record_id: StoreRecord(
-                id=record_id,
-                document=record["document"],
-                embedding=tuple(record["embedding"]),
-                metadata=record["metadata"],
-            )
-            for record_id, record in payload.items()
-        }
-
-    def _load_state(self) -> dict[str, dict[str, Any]]:
-        if not self._state_path.exists():
-            return {}
-        return json.loads(self._state_path.read_text(encoding="utf-8"))
-
-    def _persist(self) -> None:
-        serializable_records = {
-            record_id: {
-                "document": record.document,
-                "embedding": list(record.embedding),
-                "metadata": record.metadata,
-            }
-            for record_id, record in self._records.items()
-        }
-        self._records_path.write_text(
-            json.dumps(serializable_records, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        self._state_path.write_text(
-            json.dumps(self._file_state, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self._client = chromadb.PersistentClient(path=str(self.root))
+        self._collection = self._client.get_or_create_collection(
+            name=collection_name,
+            metadata={"hnsw:space": "cosine"},
         )
 
     def upsert(
@@ -81,44 +62,65 @@ class VectorStore:
         size: int,
     ) -> None:
         normalized_path = str(Path(file_path).resolve())
-        self.delete(normalized_path, persist=False)
+        self.delete(normalized_path)
+        if not chunks:
+            return
 
-        for chunk_index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
-            record_id = f"{normalized_path}::{chunk_index}"
-            self._records[record_id] = StoreRecord(
-                id=record_id,
-                document=chunk,
-                embedding=embedding,
-                metadata={
-                    "path": normalized_path,
-                    "mtime": mtime,
-                    "chunk": chunk_index,
-                    "mime": mime,
-                    "size": size,
-                },
-            )
-
-        self._file_state[normalized_path] = {"mtime": mtime, "size": size, "mime": mime}
-        self._persist()
-
-    def delete(self, file_path: str | Path, *, persist: bool = True) -> int:
-        normalized_path = str(Path(file_path).resolve())
-        keys_to_delete = [
-            key for key, record in self._records.items() if record.metadata.get("path") == normalized_path
+        ids = [_record_id(normalized_path, chunk_index) for chunk_index in range(len(chunks))]
+        metadatas = [
+            {
+                "path": normalized_path,
+                "mtime": float(mtime),
+                "chunk": chunk_index,
+                "mime": mime,
+                "size": int(size),
+            }
+            for chunk_index in range(len(chunks))
         ]
-        for key in keys_to_delete:
-            del self._records[key]
-        self._file_state.pop(normalized_path, None)
-        if persist:
-            self._persist()
-        return len(keys_to_delete)
+        for record_id, metadata, embedding in zip(ids, metadatas, embeddings, strict=True):
+            logger.info(
+                "chroma upsert pending id=%s path=%s chunk=%s dims=%s mime=%s size=%s",
+                record_id,
+                metadata["path"],
+                metadata["chunk"],
+                len(embedding),
+                metadata["mime"],
+                metadata["size"],
+            )
+        self._collection.upsert(
+            ids=ids,
+            documents=chunks,
+            embeddings=[list(embedding) for embedding in embeddings],
+            metadatas=metadatas,
+        )
+        logger.info(
+            "chroma upsert complete path=%s chunks=%s",
+            normalized_path,
+            len(chunks),
+        )
+
+    def delete(self, file_path: str | Path) -> int:
+        normalized_path = str(Path(file_path).resolve())
+        existing = self._collection.get(where={"path": normalized_path}, include=[])
+        ids = list(existing.get("ids", []))
+        if ids:
+            self._collection.delete(ids=ids)
+        return len(ids)
 
     def is_stale(self, file_path: str | Path, *, mtime: float, size: int) -> bool:
         normalized_path = str(Path(file_path).resolve())
-        current = self._file_state.get(normalized_path)
-        if current is None:
+        existing = self._collection.get(
+            where={"path": normalized_path},
+            limit=1,
+            include=["metadatas"],
+        )
+        metadatas = existing.get("metadatas") or []
+        if not metadatas:
             return True
-        return current["mtime"] != mtime or current["size"] != size
+        current = metadatas[0] or {}
+        current_mtime = float(current.get("mtime", -1.0))
+        current_size = int(current.get("size", -1))
+        return (not math.isclose(current_mtime, float(mtime), rel_tol=0.0, abs_tol=1e-6)) or current_size != int(size)
 
     def query(
         self,
@@ -128,47 +130,96 @@ class VectorStore:
         filters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         active_filters = filters or {}
-        candidates: list[dict[str, Any]] = []
-        for record in self._records.values():
-            if not _matches_filters(record.metadata, active_filters):
+        where = _build_where(active_filters)
+        candidate_ids = self._candidate_ids(active_filters, where)
+        if candidate_ids == []:
+            return []
+
+        query_kwargs: dict[str, Any] = {
+            "query_embeddings": [list(embedding)],
+            "n_results": max(n_results, 1),
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where is not None:
+            query_kwargs["where"] = where
+        if candidate_ids is not None:
+            query_kwargs["ids"] = candidate_ids
+
+        raw = self._collection.query(**query_kwargs)
+        documents = (raw.get("documents") or [[]])[0]
+        metadatas = (raw.get("metadatas") or [[]])[0]
+        distances = (raw.get("distances") or [[]])[0]
+
+        results: list[dict[str, Any]] = []
+        for document, metadata, distance in zip(documents, metadatas, distances, strict=True):
+            if metadata is None:
                 continue
-            candidates.append(
+            if not _matches_post_filters(metadata, active_filters):
+                continue
+            results.append(
                 {
-                    "path": record.metadata["path"],
-                    "score": cosine_similarity(record.embedding, embedding),
-                    "chunk": record.metadata["chunk"],
-                    "snippet": record.document[:240],
-                    "mime": record.metadata["mime"],
-                    "size": record.metadata["size"],
-                    "mtime": record.metadata["mtime"],
+                    "path": metadata["path"],
+                    "score": _distance_to_score(float(distance)),
+                    "chunk": int(metadata["chunk"]),
+                    "snippet": str(document)[:240],
+                    "mime": metadata["mime"],
+                    "size": int(metadata["size"]),
+                    "mtime": float(metadata["mtime"]),
                 }
             )
-        candidates.sort(key=lambda item: item["score"], reverse=True)
-        return candidates[:n_results]
+            if len(results) >= n_results:
+                break
+
+        results.sort(key=lambda item: item["score"], reverse=True)
+        return results[:n_results]
 
     def stats(self) -> dict[str, int]:
-        unique_paths = {record.metadata["path"] for record in self._records.values()}
+        chunk_count = int(self._collection.count())
+        if chunk_count == 0:
+            return {"documents": 0, "chunks": 0}
+
+        rows = self._collection.get(limit=chunk_count, include=["metadatas"])
+        metadatas = rows.get("metadatas") or []
+        unique_paths = {metadata["path"] for metadata in metadatas if metadata is not None}
         return {
             "documents": len(unique_paths),
-            "chunks": len(self._records),
+            "chunks": chunk_count,
         }
 
+    def _candidate_ids(
+        self,
+        filters: dict[str, Any],
+        where: dict[str, Any] | None,
+    ) -> list[str] | None:
+        path_prefix = filters.get("path_prefix")
+        if not path_prefix:
+            return None
 
-def _matches_filters(metadata: dict[str, Any], filters: dict[str, Any]) -> bool:
-    mime = filters.get("mime")
-    if mime and metadata.get("mime") != mime:
-        return False
+        normalized_prefix = str(Path(path_prefix).resolve())
+        chunk_count = int(self._collection.count())
+        if chunk_count == 0:
+            return []
 
+        rows = self._collection.get(limit=chunk_count, include=["metadatas"], where=where)
+        ids = rows.get("ids") or []
+        metadatas = rows.get("metadatas") or []
+        return [
+            record_id
+            for record_id, metadata in zip(ids, metadatas, strict=True)
+            if metadata is not None and str(metadata.get("path", "")).startswith(normalized_prefix)
+        ]
+
+
+def _distance_to_score(distance: float) -> float:
+    return 1.0 / (1.0 + max(distance, 0.0))
+
+
+def _matches_post_filters(metadata: dict[str, Any], filters: dict[str, Any]) -> bool:
     path_prefix = filters.get("path_prefix")
     if path_prefix and not str(metadata.get("path", "")).startswith(str(Path(path_prefix).resolve())):
         return False
-
-    mtime_from = filters.get("mtime_from")
-    if mtime_from is not None and float(metadata.get("mtime", 0.0)) < float(mtime_from):
-        return False
-
-    mtime_to = filters.get("mtime_to")
-    if mtime_to is not None and float(metadata.get("mtime", 0.0)) > float(mtime_to):
-        return False
-
     return True
+
+
+def _record_id(normalized_path: str, chunk_index: int) -> str:
+    return sha256(f"{normalized_path}::{chunk_index}".encode("utf-8")).hexdigest()

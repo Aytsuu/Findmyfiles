@@ -1,12 +1,12 @@
 # Findmyfiles
 
-`findmyfiles` is a local-first file indexing and semantic search service for Windows-oriented desktop files. It scans configured folders, chunks supported text documents, stores embeddings locally, and exposes a small FastAPI surface for search and index management.
+`findmyfiles` is a local-first file indexing and semantic search service for Windows-oriented desktop files. It scans configured folders, chunks supported text documents, stores embeddings in a local ChromaDB collection, and exposes a small FastAPI surface for search and index management.
 
 This repository currently implements an MVP runtime:
 
 - `config.toml`-driven configuration
-- local persistent vector storage under `storage.chroma_dir`
-- text file indexing with chunking
+- local persistent ChromaDB vector storage under `storage.chroma_dir`
+- Gemini embeddings for indexed text chunks and queries
 - basic support for PDF, DOCX, and XLSX extraction
 - FastAPI endpoints for health, config, search, and manual indexing
 - filesystem watcher wiring for incremental updates
@@ -30,11 +30,11 @@ pyproject.toml
 
 ## Requirements
 
-- Python `3.12+` in `pyproject.toml`
-- Python `3.11` also works for the current test suite and implementation
+- Python `3.11+`
 - Recommended: virtual environment
 - Windows, if you want to use the current Flow Launcher UI integration
 - `.NET 8 SDK`, if you want to build the Flow Launcher plugin from source
+- `GEMINI_API_KEY` in your environment for runtime indexing and search
 
 ## Prerequisites
 
@@ -43,6 +43,7 @@ Before using the full local workflow, install:
 - Python with `pip`
 - Flow Launcher, if you want to use the current UI
 - `.NET 8 SDK`, if you want to compile the Flow Launcher plugin yourself
+- A Gemini API key exported as `GEMINI_API_KEY`
 
 Important:
 
@@ -78,7 +79,7 @@ Edit `config.toml` before startup:
 
 ```toml
 [watcher]
-roots = ["C:/Users/patty/OneDrive/Desktop", "C:/Users/patty/Downloads"]
+roots = ["C:/Users/you/OneDrive/Desktop", "C:/Users/you/Downloads"]
 exclude_globs = [".git/**", "node_modules/**", "*.tmp", "*.log", "__pycache__/**"]
 include_exts = [".txt", ".md", ".py", ".js", ".ts", ".pdf", ".docx", ".png", ".jpg"]
 
@@ -86,7 +87,7 @@ include_exts = [".txt", ".md", ".py", ".js", ".ts", ".pdf", ".docx", ".png", ".j
 batch_size = 20
 chunk_tokens = 500
 chunk_overlap = 50
-model = "models/gemini-embedding-002"
+model = "models/gemini-embedding-2"
 
 [api]
 host = "127.0.0.1"
@@ -94,17 +95,25 @@ port = 7474
 
 [storage]
 chroma_dir = "~/.findmyfiles/chroma"
+collection_name = "findmyfiles"
 ```
 
 Notes:
 
 - `watcher.roots` must point to real directories on your machine.
-- `storage.chroma_dir` is where the local store persists its JSON-backed records.
-- `GEMINI_API_KEY` is read from the environment if present, but the current MVP uses a deterministic local embedder rather than calling Gemini directly.
+- `storage.chroma_dir` is where the embedded ChromaDB collection is persisted.
+- `storage.collection_name` lets you isolate different local indexes inside the same Chroma directory.
+- `GEMINI_API_KEY` is required at runtime. Startup will fail fast if it is missing and no custom embedder is injected.
 
 ## Startup
 
-The service performs an initial scan of configured roots, then starts the HTTP API and file watcher.
+Set your Gemini key before startup:
+
+```powershell
+$env:GEMINI_API_KEY = "your-key-here"
+```
+
+The service starts the HTTP API immediately, then performs the initial scan in a background thread while the watcher stays active.
 
 Run with the package entry point:
 
@@ -159,13 +168,13 @@ Use the `Roaming` plugin directory, not the versioned Flow Launcher install dire
 Correct:
 
 ```text
-C:\Users\patty\AppData\Roaming\FlowLauncher\Plugins\Findmyfiles\
+C:\Users\you\AppData\Roaming\FlowLauncher\Plugins\Findmyfiles\
 ```
 
 Wrong:
 
 ```text
-C:\Users\patty\AppData\Local\FlowLauncher\app-2.1.2\Plugins\Findmyfiles\
+C:\Users\you\AppData\Local\FlowLauncher\app-2.1.2\Plugins\Findmyfiles\
 ```
 
 Why:
@@ -260,14 +269,16 @@ Current coverage includes:
 - vector store upsert, query, delete, and stale detection
 - indexer chunking, indexing, and unchanged-file skip behavior
 - API health, search, index, and delete endpoints
+- watcher startup behavior for missing and valid roots
 
 ## Current MVP Scope
 
-The codebase currently favors a runnable local MVP over the original planned production integrations.
+The codebase now uses the planned core runtime integrations, but scope is still intentionally narrow.
 
-- The persistent store is JSON-backed and local.
-- Embeddings are deterministic and local for testability.
+- ChromaDB is the active local vector store.
+- Gemini embeddings are the active runtime embedding provider for text content.
+- Tests stay offline by injecting fake embedders instead of calling Gemini.
 - Watcher wiring exists, but richer debounce and event handling can still be expanded.
-- Multimodal Gemini and ChromaDB integration described in the original plan are not yet wired into runtime behavior.
+- Image and video embeddings are not wired yet; non-text unsupported files still fall back to filename-only indexing.
 
-That makes the system easy to run and verify locally, while keeping the module boundaries ready for a later swap to real embedding and vector backends.
+That keeps the runtime aligned with the original design while keeping the test suite deterministic and fast.

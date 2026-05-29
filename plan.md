@@ -25,7 +25,7 @@ A local-first semantic search system that continuously indexes your Windows file
 |---|---|---|
 | File watching | `watchdog` (Python) | Cross-platform FS events; low overhead |
 | Indexing service | Python 3.12, `asyncio` | Async batch embedding calls |
-| Embedding model | `gemini-embedding-002` (Gemini Embedding 2) | Multimodal: text + image + PDF |
+| Embedding model | `gemini-embedding-2` (Gemini Embedding 2) | Multimodal: text + image + PDF |
 | Vector DB | ChromaDB (embedded mode) | Zero-server local storage, HNSW index |
 | API server | FastAPI + Uvicorn | Lightweight, async, auto-docs at `/docs` |
 | UI | Flow Launcher plugin (C#) or Electron tray app | Windows-native launcher integration |
@@ -65,7 +65,7 @@ Responsible for extracting content and generating embeddings.
 **Embedding call:**
 ```python
 genai.embed_content(
-    model="models/gemini-embedding-002",
+    model="models/gemini-embedding-2",
     content=chunk,          # text str or PIL.Image
     task_type="RETRIEVAL_DOCUMENT",
 )
@@ -160,7 +160,7 @@ include_exts = [".txt", ".md", ".py", ".js", ".ts", ".pdf", ".docx", ".png", ".j
 batch_size = 20
 chunk_tokens = 500
 chunk_overlap = 50
-model = "models/gemini-embedding-002"
+model = "models/gemini-embedding-2"
 
 [api]
 host = "127.0.0.1"
@@ -289,4 +289,4 @@ findmyfiles = "findmyfiles.main:run"
 > **Video indexing**: Frame extraction via `ffmpeg` adds a heavy dependency. Should video files be excluded in the MVP scope?
 
 > [!NOTE]
-> **Rate limits**: `gemini-embedding-002` has free-tier limits. For large file collections (>10k files), consider a paid tier or a local fallback embedding model (e.g. `nomic-embed-text` via Ollama).
+> **Rate limits**: `gemini-embedding-2` has free-tier limits. For large file collections (>10k files), consider a paid tier or a local fallback embedding model (e.g. `nomic-embed-text` via Ollama).

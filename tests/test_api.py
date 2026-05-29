@@ -6,9 +6,26 @@ from fastapi.testclient import TestClient
 
 from findmyfiles.api import create_app
 from findmyfiles.config import APIConfig, AppConfig, IndexerConfig, StorageConfig, WatcherConfig
+from findmyfiles.embeddings import Embedder
 from findmyfiles.indexer import Indexer
 from findmyfiles.runtime import ScanStatus
 from findmyfiles.store import VectorStore
+
+
+class FakeEmbedder(Embedder):
+    def embed_documents(self, chunks: list[str]) -> list[tuple[float, ...]]:
+        return [self._embed(chunk) for chunk in chunks]
+
+    def embed_query(self, query: str) -> tuple[float, ...]:
+        return self._embed(query)
+
+    def _embed(self, value: str) -> tuple[float, ...]:
+        lower = value.lower()
+        return (
+            float("invoice" in lower),
+            float("march" in lower),
+            float(len(lower)),
+        )
 
 
 def build_test_app(tmp_path: Path) -> TestClient:
@@ -23,8 +40,8 @@ def build_test_app(tmp_path: Path) -> TestClient:
         storage=StorageConfig(chroma_dir=tmp_path / "store"),
         gemini_api_key=None,
     )
-    store = VectorStore(config.storage.chroma_dir)
-    indexer = Indexer(store, config.indexer)
+    store = VectorStore(config.storage.chroma_dir, collection_name=config.storage.collection_name)
+    indexer = Indexer(store, config.indexer, embedder=FakeEmbedder())
     app = create_app(config=config, store=store, indexer=indexer, scan_status=ScanStatus())
     return TestClient(app)
 
